@@ -23,6 +23,16 @@
   g.gameStarted = false;
   g.latency = 0;
 
+  // Mobile controls state
+  g.mobileControls = {
+    joystickActive: false,
+    joystickX: 0,
+    joystickY: 0,
+    attackPressed: false,
+    blockPressed: false,
+    touchId: null
+  };
+
   Object.defineProperties(g, {
     connected: {
       get: function() { return this.remotePlayers.length + 1; },
@@ -241,12 +251,16 @@
       g.socket.emit('resetGame', { mapId: g.mapId });
     });
 
+    // Initialize mobile controls
+    initMobileControls();
+
     g.initialized = true;
   }
 
 
   function update() {
-    g.socket.emit('updatePlayer', {
+    // Get keyboard input
+    var keys = {
       left: game.input.keyboard.isDown(Phaser.Keyboard.LEFT),
       up: game.input.keyboard.isDown(Phaser.Keyboard.UP),
       right: game.input.keyboard.isDown(Phaser.Keyboard.RIGHT),
@@ -254,7 +268,29 @@
       a: game.input.keyboard.isDown(Phaser.Keyboard.A),
       s: game.input.keyboard.isDown(Phaser.Keyboard.S),
       d: game.input.keyboard.isDown(Phaser.Keyboard.D)
-    });
+    };
+
+    // Add mobile joystick input
+    if (g.mobileControls.joystickActive) {
+      var magnitude = Math.sqrt(g.mobileControls.joystickX * g.mobileControls.joystickX + g.mobileControls.joystickY * g.mobileControls.joystickY);
+      var threshold = 0.2;
+      
+      if (magnitude > threshold) {
+        var angle = Math.atan2(g.mobileControls.joystickY, g.mobileControls.joystickX);
+        
+        // Map angle to directional keys
+        keys.left = angle > Math.PI * 0.625 && angle < Math.PI * 1.875;
+        keys.right = (angle > -Math.PI * 0.625 && angle < Math.PI * 0.625) || angle > Math.PI * 1.875;
+        keys.up = (angle > -Math.PI * 0.625 && angle < -Math.PI * 0.375) || (angle > Math.PI * 0.375 && angle < Math.PI * 0.625);
+        keys.down = angle > -Math.PI * 1.875 && angle < -Math.PI * 0.625;
+      }
+    }
+
+    // Add mobile action button input
+    keys.s = keys.s || g.mobileControls.attackPressed;
+    keys.d = keys.d || g.mobileControls.blockPressed;
+
+    g.socket.emit('updatePlayer', keys);
 
     while (g.toAdd.length !== 0) {
       var data = g.toAdd.shift();
@@ -349,6 +385,118 @@
     return array2d.map(function(row) {
       return row.join(',');
     }).join('\n');
+  }
+
+
+  /**
+   * Initialize mobile controls (touch joystick and action buttons)
+   */
+  function initMobileControls() {
+    var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    if (!isMobile) {
+      return; // Don't add mobile controls on desktop
+    }
+
+    // Create mobile controls HTML
+    var controlsHTML = '<div id="mobileControls" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 150px; display: flex; justify-content: space-between; padding: 10px; box-sizing: border-box; z-index: 1000; pointer-events: none;">' +
+      '<div id="joystickContainer" style="position: relative; width: 120px; height: 120px; background: rgba(0, 0, 0, 0.3); border: 2px solid #fff; border-radius: 50%; pointer-events: auto;">' +
+      '<div id="joystickKnob" style="position: absolute; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.6); border-radius: 50%; top: 35px; left: 35px;"></div>' +
+      '</div>' +
+      '<div style="display: flex; flex-direction: column; gap: 10px; pointer-events: auto;">' +
+      '<button id="mobileAttackBtn" style="width: 80px; height: 50px; background: rgba(255, 0, 0, 0.7); color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">Attack</button>' +
+      '<button id="mobileBlockBtn" style="width: 80px; height: 50px; background: rgba(0, 0, 255, 0.7); color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">Block</button>' +
+      '</div>' +
+      '</div>';
+
+    document.body.insertAdjacentHTML('beforeend', controlsHTML);
+
+    var joystickContainer = document.getElementById('joystickContainer');
+    var joystickKnob = document.getElementById('joystickKnob');
+    var attackBtn = document.getElementById('mobileAttackBtn');
+    var blockBtn = document.getElementById('mobileBlockBtn');
+
+    var joystickCenterX = joystickContainer.offsetLeft + joystickContainer.offsetWidth / 2;
+    var joystickCenterY = joystickContainer.offsetTop + joystickContainer.offsetHeight / 2;
+    var joystickRadius = joystickContainer.offsetWidth / 2 - 25;
+
+    // Joystick touch handling
+    joystickContainer.addEventListener('touchstart', function(e) {
+      g.mobileControls.joystickActive = true;
+      g.mobileControls.touchId = e.touches[0].identifier;
+      updateJoystick(e.touches[0]);
+    });
+
+    document.addEventListener('touchmove', function(e) {
+      if (g.mobileControls.joystickActive && g.mobileControls.touchId !== null) {
+        for (var i = 0; i < e.touches.length; i++) {
+          if (e.touches[i].identifier === g.mobileControls.touchId) {
+            updateJoystick(e.touches[i]);
+            e.preventDefault();
+            break;
+          }
+        }
+      }
+    });
+
+    document.addEventListener('touchend', function(e) {
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === g.mobileControls.touchId) {
+          g.mobileControls.joystickActive = false;
+          g.mobileControls.touchId = null;
+          g.mobileControls.joystickX = 0;
+          g.mobileControls.joystickY = 0;
+          joystickKnob.style.transform = 'translate(0, 0)';
+          break;
+        }
+      }
+    });
+
+    function updateJoystick(touch) {
+      var touchX = touch.clientX;
+      var touchY = touch.clientY;
+
+      var deltaX = touchX - joystickCenterX;
+      var deltaY = touchY - joystickCenterY;
+      var distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      if (distance > joystickRadius) {
+        var angle = Math.atan2(deltaY, deltaX);
+        deltaX = Math.cos(angle) * joystickRadius;
+        deltaY = Math.sin(angle) * joystickRadius;
+      }
+
+      g.mobileControls.joystickX = deltaX / joystickRadius;
+      g.mobileControls.joystickY = deltaY / joystickRadius;
+
+      joystickKnob.style.transform = 'translate(' + deltaX + 'px, ' + deltaY + 'px)';
+    }
+
+    // Attack button handling
+    attackBtn.addEventListener('touchstart', function(e) {
+      g.mobileControls.attackPressed = true;
+      attackBtn.style.background = 'rgba(255, 0, 0, 1)';
+      e.preventDefault();
+    });
+
+    attackBtn.addEventListener('touchend', function(e) {
+      g.mobileControls.attackPressed = false;
+      attackBtn.style.background = 'rgba(255, 0, 0, 0.7)';
+      e.preventDefault();
+    });
+
+    // Block button handling
+    blockBtn.addEventListener('touchstart', function(e) {
+      g.mobileControls.blockPressed = true;
+      blockBtn.style.background = 'rgba(0, 0, 255, 1)';
+      e.preventDefault();
+    });
+
+    blockBtn.addEventListener('touchend', function(e) {
+      g.mobileControls.blockPressed = false;
+      blockBtn.style.background = 'rgba(0, 0, 255, 0.7)';
+      e.preventDefault();
+    });
   }
 
 })(window.g = window.g || {});
