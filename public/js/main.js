@@ -279,10 +279,14 @@
         var angle = Math.atan2(g.mobileControls.joystickY, g.mobileControls.joystickX);
         
         // Map angle to directional keys
-        keys.left = angle > Math.PI * 0.625 && angle < Math.PI * 1.875;
-        keys.right = (angle > -Math.PI * 0.625 && angle < Math.PI * 0.625) || angle > Math.PI * 1.875;
-        keys.up = (angle > -Math.PI * 0.625 && angle < -Math.PI * 0.375) || (angle > Math.PI * 0.375 && angle < Math.PI * 0.625);
-        keys.down = angle > -Math.PI * 1.875 && angle < -Math.PI * 0.625;
+        // Right: -45 to 45 degrees
+        keys.right = angle > -Math.PI / 4 && angle < Math.PI / 4;
+        // Up: 45 to 135 degrees
+        keys.up = angle > Math.PI / 4 && angle < 3 * Math.PI / 4;
+        // Left: 135 to 225 degrees (or -135 to -45 degrees)
+        keys.left = angle > 3 * Math.PI / 4 || angle < -3 * Math.PI / 4;
+        // Down: -135 to -45 degrees
+        keys.down = angle > -3 * Math.PI / 4 && angle < -Math.PI / 4;
       }
     }
 
@@ -399,7 +403,7 @@
     }
 
     // Create mobile controls HTML
-    var controlsHTML = '<div id="mobileControls" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 150px; display: flex; justify-content: space-between; padding: 10px; box-sizing: border-box; z-index: 1000; pointer-events: none;">' +
+    var controlsHTML = '<div id="mobileControls" style="position: fixed; bottom: 0; left: 0; width: 100%; height: 150px; display: flex; justify-content: space-between; padding: 10px; box-sizing: border-box;">' +
       '<div id="joystickContainer" style="position: relative; width: 120px; height: 120px; background: rgba(0, 0, 0, 0.3); border: 2px solid #fff; border-radius: 50%; pointer-events: auto;">' +
       '<div id="joystickKnob" style="position: absolute; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.6); border-radius: 50%; top: 35px; left: 35px;"></div>' +
       '</div>' +
